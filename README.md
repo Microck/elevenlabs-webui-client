@@ -8,7 +8,7 @@ It uses the same auth path as the ElevenLabs browser app:
 2. Call ElevenLabs endpoints with `Authorization: Bearer <id_token>`
 3. Optionally fall back to classic `xi-api-key` auth if enabled
 
-This repo is intentionally small. It packages the reusable ElevenLabs WebUI auth and TTS logic without ArchieTok-specific pipeline code or any local secrets.
+This repo is intentionally small. It packages the reusable ElevenLabs WebUI auth and TTS logic.
 
 ## Features
 
