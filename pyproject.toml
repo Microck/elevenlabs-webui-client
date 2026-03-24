@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling>=1.26.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "elevenlabs-webui-client"
+version = "0.1.0"
+description = "Standalone ElevenLabs TTS client that authenticates like the ElevenLabs Web UI."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+  { name = "Microck" }
+]
+keywords = ["elevenlabs", "tts", "webui", "firebase", "speech"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Operating System :: OS Independent",
+  "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+dependencies = []
+
+[project.optional-dependencies]
+browser = ["playwright>=1.52,<2"]
+
+[project.scripts]
+elevenlabs-webui = "elevenlabs_webui_client.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/elevenlabs_webui_client"]
