@@ -141,6 +141,25 @@ def _decode_jwt_exp(token: str) -> float:
 
 
 def extract_profile_auth(profile_dir: str) -> tuple[list[str], list[dict[str, object]]]:
+    """Extract Firebase auth tokens from a logged-in browser profile.
+
+    Launches a headless browser (Chromium or Firefox, depending on profile
+    contents), navigates to the ElevenLabs speech synthesis page, and reads
+    refresh tokens and bearer tokens from ``localStorage``.
+
+    Requires the ``browser`` optional dependency (``pip install '.[browser]'``)
+    and a Playwright browser installation.
+
+    Args:
+        profile_dir: Path to the browser profile directory.
+
+    Returns:
+        A tuple of ``(refresh_tokens, bearer_tokens)``.  Bearer tokens
+        include ``"token"`` and ``"expires_at"`` keys.
+
+    Raises:
+        RuntimeError: If Playwright is not installed.
+    """
     try:
         from playwright.sync_api import sync_playwright
     except Exception as exc:
@@ -599,6 +618,18 @@ def _request_json(
 
 
 def sanitize_tts_text(text: str) -> str:
+    """Strip markdown, brackets, and parentheses from text before sending to TTS.
+
+    Markdown images ``![alt](url)`` become whitespace. Links ``[text](url)``
+    become the label text. Remaining bracket/parenthesis groups are removed.
+    Whitespace is normalised to single spaces.
+
+    Args:
+        text: Raw input text that may contain markdown or stage directions.
+
+    Returns:
+        Cleaned string safe for TTS synthesis.
+    """
     sanitized = str(text or "")
     sanitized = re.sub(r"!\[[^\]]*\]\([^)]+\)", " ", sanitized)
     sanitized = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", sanitized)
@@ -635,6 +666,14 @@ def _voice_settings_for_model(model_id: str) -> dict[str, object]:
 
 
 def format_refresh_tokens_env_line(tokens: list[str]) -> str:
+    """Format refresh tokens as an ``ELEVENLABS_FIREBASE_REFRESH_TOKENS=...`` export line.
+
+    Args:
+        tokens: List of Firebase refresh tokens.
+
+    Returns:
+        A string suitable for shell evaluation or ``.env`` inclusion.
+    """
     return f"ELEVENLABS_FIREBASE_REFRESH_TOKENS={','.join(tokens)}"
 
 
@@ -648,6 +687,23 @@ def tts_to_mp3(
     language_code: str | None = None,
     alignment_out_path: str | None = None,
 ) -> None:
+    """Synthesize text to an MP3 file using the ElevenLabs TTS API.
+
+    Text is sanitised via :func:`sanitize_tts_text` before synthesis.
+    The model defaults to ``eleven_v3`` unless overridden by
+    ``ELEVENLABS_MODEL_ID`` or the *model_id* parameter.  When the resolved
+    model is ``eleven_v3`` and *language_code* is ``es``, the model switches
+    to ``eleven_multilingual_v2`` (or ``ELEVENLABS_MODEL_ID_ES``).
+
+    Args:
+        voice_id: ElevenLabs voice identifier.
+        text: Text to synthesize (markdown is stripped automatically).
+        out_path: Destination file path for the MP3 output.
+        model_id: Optional model override (e.g. ``"eleven_multilingual_v2"``).
+        salt: Influences stable credential rotation order.
+        language_code: Optional language hint for multilingual models.
+        alignment_out_path: If set, timestamp alignment JSON is written here.
+    """
     resolved_model = _resolve_model_id(model_id=model_id, language_code=language_code)
     normalized_language = (language_code or "").strip().lower()
     use_timestamps = bool(str(alignment_out_path or "").strip())
@@ -711,6 +767,16 @@ def tts_to_mp3(
 
 
 def get_subscription(*, salt: str = "subscription") -> dict[str, object]:
+    """Fetch the current ElevenLabs subscription details.
+
+    Calls ``GET /v1/user/subscription`` using the configured auth chain.
+
+    Args:
+        salt: Influences stable credential rotation order.
+
+    Returns:
+        Parsed JSON response from the ElevenLabs API.
+    """
     return _request_json(
         f"{ELEVENLABS_API_BASE_URL}/user/subscription",
         headers={"Accept": "application/json"},
@@ -719,6 +785,16 @@ def get_subscription(*, salt: str = "subscription") -> dict[str, object]:
 
 
 def list_voices(*, salt: str = "voices") -> dict[str, object]:
+    """Fetch available ElevenLabs voices.
+
+    Calls ``GET /v1/voices`` using the configured auth chain.
+
+    Args:
+        salt: Influences stable credential rotation order.
+
+    Returns:
+        Parsed JSON response containing a ``"voices"`` list.
+    """
     return _request_json(
         f"{ELEVENLABS_API_BASE_URL}/voices",
         headers={"Accept": "application/json"},
