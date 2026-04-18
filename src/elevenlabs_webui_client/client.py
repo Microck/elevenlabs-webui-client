@@ -22,15 +22,22 @@ _webui_profile_auth_cache: dict[str, dict[str, object]] = {}
 
 
 def _debug(message: str) -> None:
+    """Print a debug message if ELEVENLABS_DEBUG=1 is set."""
     if os.environ.get("ELEVENLABS_DEBUG", "").strip() == "1":
         print(message)
 
 
 def _token_cache_key(refresh_token: str) -> str:
+    """Return a SHA-256 hash of the refresh token for use as a cache key."""
     return hashlib.sha256(refresh_token.encode("utf-8")).hexdigest()
 
 
 def _refresh_bearer_token(refresh_token: str) -> tuple[str, float]:
+    """Exchange a Firebase refresh token for a new ID token via the Firebase securetoken API.
+
+    Returns:
+        A tuple of (id_token, expires_at_timestamp).
+    """
     data = urllib.parse.urlencode(
         {"grant_type": "refresh_token", "refresh_token": refresh_token}
     ).encode("utf-8")
@@ -59,6 +66,7 @@ def _refresh_bearer_token(refresh_token: str) -> tuple[str, float]:
 
 
 def _auth_mode() -> str:
+    """Read and validate the ELEVENLABS_AUTH_MODE environment variable."""
     mode = os.environ.get("ELEVENLABS_AUTH_MODE", "auto").strip().lower()
     if mode in {"auto", "webui", "bearer", "firebase", "api"}:
         return mode
@@ -66,10 +74,12 @@ def _auth_mode() -> str:
 
 
 def _web_session_auth_enabled() -> bool:
+    """Check if WebUI/session-based auth should be attempted."""
     return _auth_mode() in {"auto", "webui", "bearer", "firebase"}
 
 
 def _get_profile_refresh_interval_seconds() -> int:
+    """Read the profile auth cache TTL from the environment, clamped to [0, 86400]."""
     raw = os.environ.get("ELEVENLABS_WEBUI_PROFILE_REFRESH_SECONDS", "").strip()
     if not raw:
         return 900
@@ -83,6 +93,7 @@ def _get_profile_refresh_interval_seconds() -> int:
 def _profile_cache_get(
     profile_dir: str, *, force_refresh: bool = False
 ) -> dict[str, object] | None:
+    """Retrieve cached profile auth data if still fresh, otherwise None."""
     now = time.time()
     refresh_every = _get_profile_refresh_interval_seconds()
     cached = _webui_profile_auth_cache.get(profile_dir)
@@ -104,6 +115,7 @@ def _profile_cache_put(
     refresh_tokens: list[str],
     bearer_tokens: list[dict[str, object]],
 ) -> None:
+    """Store profile auth data in the in-memory cache with a timestamp."""
     _webui_profile_auth_cache[profile_dir] = {
         "refresh_tokens": list(refresh_tokens),
         "bearer_tokens": list(bearer_tokens),
@@ -112,6 +124,11 @@ def _profile_cache_put(
 
 
 def _launch_profile_context(playwright, profile_dir: str):
+    """Launch a Playwright browser context using the given profile directory.
+
+    Uses Firefox if a cookies.sqlite exists (pre-existing Firefox profile),
+    otherwise falls back to Chromium with sandboxing disabled.
+    """
     if os.path.exists(os.path.join(profile_dir, "cookies.sqlite")):
         return playwright.firefox.launch_persistent_context(
             user_data_dir=profile_dir,
@@ -126,6 +143,7 @@ def _launch_profile_context(playwright, profile_dir: str):
 
 
 def _decode_jwt_exp(token: str) -> float:
+    """Extract the expiry timestamp from a JWT payload, minus a 120-second buffer."""
     try:
         parts = token.split(".")
         if len(parts) < 2:
@@ -141,6 +159,14 @@ def _decode_jwt_exp(token: str) -> float:
 
 
 def extract_profile_auth(profile_dir: str) -> tuple[list[str], list[dict[str, object]]]:
+    """Extract Firebase refresh tokens and bearer tokens from a logged-in browser profile.
+
+    Launches a headless browser via Playwright, navigates to the ElevenLabs
+    speech-synthesis page, and scrapes auth tokens from localStorage.
+
+    Returns:
+        A tuple of (refresh_tokens, bearer_tokens_with_expiry).
+    """
     try:
         from playwright.sync_api import sync_playwright
     except Exception as exc:
@@ -228,6 +254,7 @@ def extract_profile_auth(profile_dir: str) -> tuple[list[str], list[dict[str, ob
 def _get_profile_refresh_tokens(
     profile_dir: str, *, force_refresh: bool = False
 ) -> list[str]:
+    """Get refresh tokens from the profile cache, or extract them fresh if expired."""
     cached = _profile_cache_get(profile_dir, force_refresh=force_refresh)
     if cached is not None:
         tokens_raw = cached.get("refresh_tokens")
@@ -246,6 +273,7 @@ def _get_profile_refresh_tokens(
 def _get_profile_bearer_tokens(
     profile_dir: str, *, force_refresh: bool = False
 ) -> list[str]:
+    """Get non-expired bearer tokens from the profile cache, or extract fresh ones."""
     cached = _profile_cache_get(profile_dir, force_refresh=force_refresh)
     if cached is not None:
         bearer_tokens_raw = cached.get("bearer_tokens")
@@ -286,6 +314,7 @@ def _get_profile_bearer_tokens(
 
 
 def _get_refresh_tokens(*, force_profile_refresh: bool = False) -> list[str]:
+    """Collect all available refresh tokens from profile and environment variables, deduplicated."""
     profile_dir = os.environ.get("ELEVENLABS_WEBUI_PROFILE_DIR", "").strip()
     profile_tokens: list[str] = []
     if profile_dir:
@@ -312,6 +341,7 @@ def _get_refresh_tokens(*, force_profile_refresh: bool = False) -> list[str]:
 
 
 def _api_key_fallback_enabled() -> bool:
+    """Check whether API-key fallback auth is allowed by configuration."""
     disable = os.environ.get("ELEVENLABS_DISABLE_API_KEY_FALLBACK", "").strip().lower()
     if disable in {"1", "true", "yes", "on"}:
         return False
@@ -319,6 +349,7 @@ def _api_key_fallback_enabled() -> bool:
 
 
 def _get_bearer_token_for(refresh_token: str, *, force_refresh: bool = False) -> str:
+    """Get a valid bearer token for the given refresh token, using cache when possible."""
     cache_key = _token_cache_key(refresh_token)
     cached = _bearer_cache.get(cache_key)
     if not force_refresh and cached:
@@ -336,6 +367,7 @@ def _get_bearer_token_for(refresh_token: str, *, force_refresh: bool = False) ->
 
 
 def _stable_index(seed: str, count: int) -> int:
+    """Deterministically select an index in [0, count) based on a seed string."""
     if count <= 1:
         return 0
     digest = hashlib.sha256(seed.encode("utf-8")).digest()
@@ -343,11 +375,13 @@ def _stable_index(seed: str, count: int) -> int:
 
 
 def _get_api_keys() -> list[str]:
+    """Read ElevenLabs API keys from ELEVENLABS_API_KEYS or ELEVENLABS_API_KEY."""
     raw = os.environ.get("ELEVENLABS_API_KEYS") or os.environ.get("ELEVENLABS_API_KEY") or ""
     return [value.strip() for value in raw.split(",") if value.strip()]
 
 
 def _read_http_error_body(error: urllib.error.HTTPError) -> str:
+    """Safely read the response body from an HTTPError, returning a string."""
     try:
         body = error.read()
     except Exception:
@@ -358,6 +392,7 @@ def _read_http_error_body(error: urllib.error.HTTPError) -> str:
 
 
 def _should_rotate_credential(code: int, body_text: str) -> bool:
+    """Determine if a failed request should trigger rotation to the next credential."""
     if code in {401, 402, 403, 404, 429}:
         return True
 
@@ -392,6 +427,7 @@ def _http_request(
     headers: dict[str, str] | None = None,
     timeout: int = 120,
 ) -> bytes:
+    """Execute an HTTP request and return the raw response bytes."""
     request = urllib.request.Request(
         url,
         data=body,
@@ -411,6 +447,12 @@ def _request_with_auth(
     salt: str = "default",
     timeout: int = 120,
 ) -> bytes:
+    """Make an authenticated HTTP request with automatic credential rotation.
+
+    Tries profile bearer tokens, then Firebase refresh→bearer flow,
+    then API-key fallback (if enabled). Rotates through multiple
+    credentials on auth failures.
+    """
     base_headers = dict(headers or {})
     last_http: tuple[str, int, str] | None = None
 
@@ -579,6 +621,7 @@ def _request_json(
     salt: str = "default",
     timeout: int = 120,
 ) -> dict[str, object]:
+    """Make an authenticated request and parse the response as a JSON dict."""
     response = _request_with_auth(
         url,
         method=method,
@@ -599,6 +642,7 @@ def _request_json(
 
 
 def sanitize_tts_text(text: str) -> str:
+    """Strip markdown syntax (links, images, brackets) from text for TTS input."""
     sanitized = str(text or "")
     sanitized = re.sub(r"!\[[^\]]*\]\([^)]+\)", " ", sanitized)
     sanitized = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", sanitized)
@@ -611,6 +655,7 @@ def sanitize_tts_text(text: str) -> str:
 def _resolve_model_id(
     *, model_id: str | None = None, language_code: str | None = None
 ) -> str:
+    """Resolve the TTS model ID, falling back to env vars and Spanish-language overrides."""
     resolved = model_id or os.environ.get("ELEVENLABS_MODEL_ID") or "eleven_v3"
     language = (language_code or "").strip().lower()
     if language == "es" and resolved == "eleven_v3":
@@ -619,6 +664,7 @@ def _resolve_model_id(
 
 
 def _voice_settings_for_model(model_id: str) -> dict[str, object]:
+    """Return default voice settings (stability, similarity, style) for the given model."""
     if model_id == "eleven_v3":
         return {
             "stability": 0.5,
@@ -635,6 +681,7 @@ def _voice_settings_for_model(model_id: str) -> dict[str, object]:
 
 
 def format_refresh_tokens_env_line(tokens: list[str]) -> str:
+    """Format refresh tokens as an ELEVENLABS_FIREBASE_REFRESH_TOKENS=... env line."""
     return f"ELEVENLABS_FIREBASE_REFRESH_TOKENS={','.join(tokens)}"
 
 
@@ -648,6 +695,10 @@ def tts_to_mp3(
     language_code: str | None = None,
     alignment_out_path: str | None = None,
 ) -> None:
+    """Synthesize speech via the ElevenLabs API and save the result as an MP3 file.
+
+    Optionally saves alignment/timestamp data if alignment_out_path is provided.
+    """
     resolved_model = _resolve_model_id(model_id=model_id, language_code=language_code)
     normalized_language = (language_code or "").strip().lower()
     use_timestamps = bool(str(alignment_out_path or "").strip())
@@ -711,6 +762,7 @@ def tts_to_mp3(
 
 
 def get_subscription(*, salt: str = "subscription") -> dict[str, object]:
+    """Fetch the current ElevenLabs subscription details."""
     return _request_json(
         f"{ELEVENLABS_API_BASE_URL}/user/subscription",
         headers={"Accept": "application/json"},
@@ -719,6 +771,7 @@ def get_subscription(*, salt: str = "subscription") -> dict[str, object]:
 
 
 def list_voices(*, salt: str = "voices") -> dict[str, object]:
+    """Fetch the list of available ElevenLabs voices."""
     return _request_json(
         f"{ELEVENLABS_API_BASE_URL}/voices",
         headers={"Accept": "application/json"},
