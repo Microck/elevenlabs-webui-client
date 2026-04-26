@@ -14,6 +14,7 @@ from .client import (
 
 
 def _read_text(args: argparse.Namespace) -> str:
+    """Read TTS input text from --text or --text-file."""
     if args.text is not None:
         return args.text
     if args.text_file is None:
@@ -22,10 +23,12 @@ def _read_text(args: argparse.Namespace) -> str:
 
 
 def _print_json(payload: object) -> None:
+    """Pretty-print a Python object as indented JSON."""
     print(json.dumps(payload, indent=2, sort_keys=True))
 
 
 def _cmd_tts(args: argparse.Namespace) -> int:
+    """Handle the `tts` subcommand — synthesize speech to an MP3 file."""
     text = _read_text(args)
     tts_to_mp3(
         voice_id=args.voice_id,
@@ -44,12 +47,14 @@ def _cmd_tts(args: argparse.Namespace) -> int:
 
 
 def _cmd_subscription(args: argparse.Namespace) -> int:
+    """Handle the `subscription` subcommand — fetch and print subscription info."""
     subscription = get_subscription(salt=args.salt)
     _print_json(subscription)
     return 0
 
 
 def _cmd_voices(args: argparse.Namespace) -> int:
+    """Handle the `voices` subcommand — list available voices."""
     payload = list_voices(salt=args.salt)
     if args.json:
         _print_json(payload)
@@ -77,6 +82,7 @@ def _cmd_voices(args: argparse.Namespace) -> int:
 
 
 def _cmd_extract_profile_auth(args: argparse.Namespace) -> int:
+    """Handle the `extract-profile-auth` subcommand — extract auth from a browser profile."""
     refresh_tokens, bearer_tokens = extract_profile_auth(args.profile_dir)
 
     if args.print_env:
@@ -104,6 +110,7 @@ def _cmd_extract_profile_auth(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the argument parser for the elevenlabs-webui CLI."""
     parser = argparse.ArgumentParser(prog="elevenlabs-webui")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -149,6 +156,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Entry point for the elevenlabs-webui CLI."""
     parser = build_parser()
     args = parser.parse_args(argv)
     return int(args.func(args))
