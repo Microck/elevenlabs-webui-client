@@ -13,7 +13,7 @@ This repo is intentionally small. It packages the reusable ElevenLabs WebUI auth
 ## Requirements
 
 - Python 3.11+
-- No runtime dependencies for core functionality
+- **Zero runtime dependencies** — uses only stdlib modules (`urllib`, `hashlib`, `base64`, `json`, `re`, `time`, `os`)
 - Optional: [Playwright](https://playwright.dev/python/) for browser-profile auth extraction
 
 ## Features
@@ -135,7 +135,14 @@ elevenlabs-webui extract-profile-auth --profile-dir /path/to/profile --show-bear
 ## Python API
 
 ```python
-from elevenlabs_webui_client import get_subscription, list_voices, tts_to_mp3
+from elevenlabs_webui_client import (
+    extract_profile_auth,
+    format_refresh_tokens_env_line,
+    get_subscription,
+    list_voices,
+    sanitize_tts_text,
+    tts_to_mp3,
+)
 
 print(get_subscription()["tier"])
 print(len(list_voices().get("voices", [])))
@@ -145,12 +152,36 @@ tts_to_mp3(
     text="Hello from Python.",
     out_path="outputs/hello.mp3",
 )
+
+# Preprocess text to remove markdown before TTS
+clean_text = sanitize_tts_text("**Bold** and _italic_ text")
+
+# Extract auth from a browser profile
+auth = extract_profile_auth("/path/to/chromium/profile")
+print(auth["refresh_tokens"])
+
+# Format tokens for .env
+print(format_refresh_tokens_env_line(auth["refresh_tokens"]))
 ```
 
 The package can also be invoked as a module:
 
 ```bash
 python -m elevenlabs_webui_client tts --voice-id RXtWW6etvimS8QJ5nhVk --text "test" --out test.mp3
+```
+
+## Testing
+
+Run the test suite to verify the client works correctly:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+For development, also verify the CLI is installed:
+
+```bash
+elevenlabs-webui --help
 ```
 
 ## Environment Variables
@@ -166,12 +197,13 @@ python -m elevenlabs_webui_client tts --voice-id RXtWW6etvimS8QJ5nhVk --text "te
 | `ELEVENLABS_API_KEYS` / `ELEVENLABS_API_KEY` | — | Optional classic API key fallback |
 | `ELEVENLABS_MODEL_ID` | `eleven_v3` | Default TTS model |
 | `ELEVENLABS_MODEL_ID_ES` | `eleven_multilingual_v2` | Spanish override when default is `eleven_v3` |
-| `ELEVENLABS_DEBUG` | — | Set to `1` for debug logging |
+| `ELEVENLABS_DEBUG` | — | Set to `1` for debug output (goes to stdout, may interleave with JSON) |
 
 ## Project Structure
 
 ```text
 elevenlabs-webui-client/
+├── .env.example
 ├── pyproject.toml
 ├── README.md
 ├── INSTALL.md
